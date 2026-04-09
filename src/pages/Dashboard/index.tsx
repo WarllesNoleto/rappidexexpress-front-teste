@@ -119,18 +119,6 @@ export function Dashboard() {
     [permission],
   );
 
-  function getResponseCount(response: any) {
-    if (typeof response?.data?.count === "number") {
-      return response.data.count;
-    }
-
-    if (Array.isArray(response?.data?.data)) {
-      return response.data.data.length;
-    }
-
-    return 0;
-  }
-
   function normalizeDeliveryResponse(payload: any): Report | null {
     if (!payload) return null;
 
@@ -205,14 +193,10 @@ export function Dashboard() {
       }
 
       try {
-        const [currentResponse, pendingResponse, assignedResponse] =
-          await Promise.all([
-            api.get(`/delivery?status=${status}`),
-            api.get(`/delivery?status=${StatusDelivery.PENDING}`),
-            api.get(
-              `/delivery?status=${StatusDelivery.ONCOURSE},${StatusDelivery.COLLECTED}`,
-            ),
-          ]);
+        const [currentResponse, countsResponse] = await Promise.all([
+          api.get(`/delivery?status=${status}`),
+          api.get("/delivery/counts"),
+        ]);
 
         if (requestId !== refreshRequestIdRef.current) {
           return;
@@ -223,8 +207,8 @@ export function Dashboard() {
           : [];
 
         setReports(sortDashboardReports(rawReports));
-        setPendingCount(getResponseCount(pendingResponse));
-        setAssignedCount(getResponseCount(assignedResponse));
+        setPendingCount(Number(countsResponse.data?.pending) || 0);
+        setAssignedCount(Number(countsResponse.data?.assigned) || 0);
       } catch (error: any) {
         if (requestId !== refreshRequestIdRef.current) {
           return;
