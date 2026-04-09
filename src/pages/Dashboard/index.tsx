@@ -371,6 +371,7 @@ export function Dashboard() {
       setPendingCount((state) => Math.max(0, state + delta.pending));
       setAssignedCount((state) => Math.max(0, state + delta.assigned));
       updateReportInListLocally(updatedReport);
+      void getMotoboys();
 
       alert(`Solicitação avançada para o passo ${newStatus}`);
       setObservation("");
@@ -405,6 +406,7 @@ export function Dashboard() {
       } else {
         await refreshDashboard(false);
       }
+      void getMotoboys();
 
       alert("Motoboy foi atualizado com sucesso.");
     } catch (error: any) {
@@ -437,6 +439,7 @@ export function Dashboard() {
       setPendingCount((state) => Math.max(0, state + delta.pending));
       setAssignedCount((state) => Math.max(0, state + delta.assigned));
       setReports((state) => state.filter((item) => item.id !== report.id));
+      void getMotoboys();
 
       alert("O pedido foi cancelado com sucesso.");
     } catch (error: any) {
@@ -459,6 +462,7 @@ export function Dashboard() {
       setPendingCount((state) => Math.max(0, state + delta.pending));
       setAssignedCount((state) => Math.max(0, state + delta.assigned));
       setReports((state) => state.filter((item) => item.id !== report.id));
+      void getMotoboys();
 
       alert("Solicitação apagada com sucesso.");
     } catch (error: any) {
