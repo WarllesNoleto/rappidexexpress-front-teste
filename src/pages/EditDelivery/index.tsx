@@ -47,17 +47,18 @@ export function EditDelivery(){
             const motoboysResponse = await api.get('/user?type=motoboy')
 
             setMotoboys(motoboysResponse.data.data)
-            setLoading(false)
         } catch (error: any) {
             alert(error.response.data.message)
+        } finally {
+            setLoading(false)
         }
     }
 
     useEffect(() => {
         if(loading){
-            getMotoboys()
+            void getMotoboys()
         }
-    })
+    }, [loading])
     return (
         <Container>
             {loading ?
