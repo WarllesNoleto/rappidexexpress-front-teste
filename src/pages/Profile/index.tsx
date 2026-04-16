@@ -13,7 +13,7 @@ import {
 
 import { DeliveryContext } from '../../context/DeliveryContext';
 import api from '../../services/api';
-import { translateIfoodOperationType } from '../../shared/utils/ifoodHistory.ts';
+import { formatIfoodHistoryDateTime, translateIfoodOperationType } from '../../shared/utils/ifoodHistory.ts';
 
 import { 
     BaseInput, 
@@ -28,6 +28,7 @@ import {
     CreditHistoryItem,
 } from "./styles";
 import { Loader } from '../../components/Loader';
+
 
 const ProfileFormValidationSchema = zod.object({
     name: zod.string().min(5, 'Informe o seu nome.'),
@@ -78,24 +79,7 @@ export function Profile(){
     })
 
      function formatHistoryDateTime(dateValue?: string) {
-        if (!dateValue) {
-            return { date: '-', time: '-' }
-        }
-
-        const parsedDate = new Date(dateValue)
-
-        if (Number.isNaN(parsedDate.getTime())) {
-            return { date: '-', time: '-' }
-        }
-
-        return {
-            date: parsedDate.toLocaleDateString('pt-BR'),
-            time: parsedDate.toLocaleTimeString('pt-BR', {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-            }),
-        }
+        return formatIfoodHistoryDateTime(dateValue)
     }
 
     function handleConfig() {
