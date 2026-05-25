@@ -52,6 +52,8 @@ type DeliveryUpdateData = {
   status?: string;
   motoboyId?: string;
   observation?: string;
+  destinationObservation?: string;
+  destinationObservationConfirmed?: boolean;
   deliveryCode?: string;
 };
 
@@ -74,12 +76,14 @@ type DeliveryCardProps = {
   onNextStep: (report: Report) => void;
   onDelete: (report: Report) => void;
   onDeliveryCodeChange: (reportId: string, value: string) => void;
-  getButtonText: (currentStatus: string, id: string, report?: Report) => string;
+  getButtonText: (currentStatus: string, report?: Report) => string;
   getHours: (date: string) => string;
   formatPhoneNumber: (phone: string) => string;
   getIfoodOrderNumber: (observation?: string) => string | null;
   getClientWhatsappMessage: (report: Report) => string | undefined;
   deliveryCode: string;
+  previewObservation: string;
+  shouldShowObservationPreview: boolean;
 };
 
 const getIfoodClientAddress = (observation?: string): string | null => {
@@ -154,6 +158,8 @@ const DeliveryCard = memo(
     getIfoodOrderNumber,
     getClientWhatsappMessage,
     deliveryCode,
+    previewObservation,
+    shouldShowObservationPreview,
   }: DeliveryCardProps) {
     const getClientVisualStatus = (delivery: Report) => {
       if (delivery.collectedAt) return "Motoboy está a caminho";
@@ -186,11 +192,11 @@ const DeliveryCard = memo(
       (report as any).ifoodDisplayId ||
       (report as any).ifoodOrderId ||
       null;
-    const ifoodClientLocationLink = getIfoodClientLocationLink(
+    const ifoodClientLocationLink = report.addressMapsUrl || getIfoodClientLocationLink(
       report.observation,
       report.clientLocation,
     );
-    const ifoodClientAddress = getIfoodClientAddress(report.observation);
+    const ifoodClientAddress = report.clientAddress || getIfoodClientAddress(report.observation);
     const googleMapsAddressLink = getGoogleMapsLinkFromAddress(ifoodClientAddress);
     const motoboySelectId = `motoboy-${report.id}`;
     const shouldShowDeliveryCodeInput =
@@ -265,7 +271,7 @@ const DeliveryCard = memo(
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <p>Localização cliente</p> <MapPin size={18} />
+                <p>Ver no mapa</p> <MapPin size={18} />
               </Link>
             )}
             {statusFilter !== StatusDelivery.PENDING && !ifoodClientLocationLink && googleMapsAddressLink && (
@@ -274,7 +280,7 @@ const DeliveryCard = memo(
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <p>Localização cliente (Google Maps)</p> <MapPin size={18} />
+                <p>Ver no mapa</p> <MapPin size={18} />
               </Link>
             )}
           </div>
@@ -342,7 +348,6 @@ const DeliveryCard = memo(
               Código de entrega iFood:
             </label>
             <input
-              autoComplete="off"
               id={`delivery-code-${report.id}`}
               type="text"
               value={deliveryCode}
@@ -352,6 +357,14 @@ const DeliveryCard = memo(
             />
           </SelectContainer>
         )}
+
+        {(report.status === StatusDelivery.ARRIVED_AT_DESTINATION ||
+          report.status === StatusDelivery.AWAITING_CODE) &&
+          shouldShowObservationPreview && (
+            <ContainerInfo>
+              <p><b>Observação do pedido:</b> {previewObservation || "Sem observação."}</p>
+            </ContainerInfo>
+          )}
 
         <OrderActions>
           {(permission === "admin" || permission === "superadmin") &&
@@ -368,7 +381,7 @@ const DeliveryCard = memo(
 
           {permission !== "shopkeeper" && (
             <OrderButton typebutton={true} onClick={() => onNextStep(report)}>
-              {getButtonText(report.status, report.id, report)}
+              {getButtonText(report.status, report)}
             </OrderButton>
           )}
 
@@ -393,7 +406,9 @@ function areDeliveryCardPropsEqual(prev: DeliveryCardProps, next: DeliveryCardPr
     prev.deliveryCode === next.deliveryCode &&
     prev.reportSelectedToModal === next.reportSelectedToModal &&
     prev.motoboys === next.motoboys &&
-    prev.isUpdating === next.isUpdating
+    prev.isUpdating === next.isUpdating &&
+    prev.previewObservation === next.previewObservation &&
+    prev.shouldShowObservationPreview === next.shouldShowObservationPreview
   );
 }
 
@@ -423,7 +438,6 @@ export function Dashboard() {
   const didFirstLoadRef = useRef(false);
 
   const [isVisible, setIsVisible] = useState<boolean>(false);
-  const [observation, setObservation] = useState<string>("");
   const [reportSelectedToModal, setReportSelectedToModal] =
     useState<string>("");
 
@@ -453,9 +467,10 @@ export function Dashboard() {
 
     const statusPriority: Record<string, number> = {
       [StatusDelivery.ONCOURSE]: 0,
+      [StatusDelivery.ARRIVED_AT_STORE]: 0,
       [StatusDelivery.COLLECTED]: 1,
-      [StatusDelivery.ARRIVED_AT_DESTINATION]: 2,
-      [StatusDelivery.AWAITING_CODE]: 3,
+      [StatusDelivery.ARRIVED_AT_DESTINATION]: 1,
+      [StatusDelivery.AWAITING_CODE]: 1,
     };
 
     return sortedByCreatedAt.sort((a, b) => {
@@ -499,27 +514,33 @@ export function Dashboard() {
     return payload as Report;
   }
 
-  function isInAssigned(statusValue?: string) {
-    return (
-      statusValue === StatusDelivery.ONCOURSE ||
-      statusValue === StatusDelivery.ARRIVED_AT_STORE ||
-      statusValue === StatusDelivery.COLLECTED ||
-      statusValue === StatusDelivery.ARRIVED_AT_DESTINATION ||
-      statusValue === StatusDelivery.AWAITING_CODE
-    );
+  function isAssignedDelivery(report?: Partial<Report> | null) {
+    if (!report) return false;
+
+    const statusValue = report.status;
+    const hasMotoboy = Boolean(report.motoboyId);
+    const isActiveDelivery = report.isActive !== false;
+    const isFinishedOrCanceled =
+      statusValue === StatusDelivery.FINISHED ||
+      statusValue === StatusDelivery.CANCELED;
+
+    return hasMotoboy && isActiveDelivery && !isFinishedOrCanceled;
   }
 
   function getCountDelta(
-    previousStatus?: string,
-    nextStatus?: string,
+    previousReport?: Partial<Report> | null,
+    nextReport?: Partial<Report> | null,
   ): DeliveryCountsDelta {
+    const previousStatus = previousReport?.status;
+    const nextStatus = nextReport?.status;
+
     return {
       pending:
         (previousStatus === StatusDelivery.PENDING ? -1 : 0) +
         (nextStatus === StatusDelivery.PENDING ? 1 : 0),
       assigned:
-        (isInAssigned(previousStatus) ? -1 : 0) +
-        (isInAssigned(nextStatus) ? 1 : 0),
+        (isAssignedDelivery(previousReport) ? -1 : 0) +
+        (isAssignedDelivery(nextReport) ? 1 : 0),
     };
   }
 
@@ -649,16 +670,38 @@ export function Dashboard() {
     }
   }, []);
 
-  function getObservationPatch() {
-    const trimmedObservation = observation.trim();
 
-    if (!trimmedObservation || trimmedObservation === "Sem observação.") {
-      return {};
+
+  async function handleConfirmObservation(text: string) {
+    if (!reportSelectedToModal) return;
+
+    const deliveryId = reportSelectedToModal;
+    const finalText = text.trim();
+
+    try {
+      startUpdatingDelivery(deliveryId);
+
+      const response = await api.put(`/delivery/${deliveryId}`, {
+        destinationObservation: finalText || "Sem observação.",
+        destinationObservationConfirmed: true,
+      });
+
+      const updatedReport = normalizeDeliveryResponse(response.data);
+
+      if (updatedReport) {
+        updateReportInListLocally(updatedReport);
+      } else {
+        await refreshDashboard(false);
+      }
+
+      setReportSelectedToModal("");
+      handleModal();
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Erro ao salvar observação.");
+    } finally {
+      stopUpdatingDelivery(deliveryId);
     }
-
-    return { observation: trimmedObservation };
   }
-
   async function handlerNextStep(report: Report) {
     if (isDeliveryUpdating(report.id)) {
       return;
@@ -668,15 +711,6 @@ export function Dashboard() {
 
     let data: DeliveryUpdateData | null = null;
     let newStatus = "";
-
-    if (
-      report.status === StatusDelivery.COLLECTED &&
-      report.id !== reportSelectedToModal
-    ) {
-      setReportSelectedToModal(report.id);
-      handleModal();
-      return;
-    }
 
     if (report.status === StatusDelivery.PENDING) {
       if (!selectedMotoboy) {
@@ -703,12 +737,17 @@ export function Dashboard() {
       newStatus = StatusDelivery.ARRIVED_AT_DESTINATION;
       data = {
         status: newStatus,
-        ...getObservationPatch(),
       };
     } else if (
       report.status === StatusDelivery.ARRIVED_AT_DESTINATION ||
       report.status === StatusDelivery.AWAITING_CODE
     ) {
+      if (!report.destinationObservationConfirmed) {
+        setReportSelectedToModal(report.id);
+        handleModal();
+        return;
+      }
+
       newStatus = StatusDelivery.FINISHED;
 
       const isIfoodOrder =
@@ -728,7 +767,6 @@ export function Dashboard() {
 
       data = {
         status: newStatus,
-        ...getObservationPatch(),
         deliveryCode,
       };
     }
@@ -760,14 +798,13 @@ export function Dashboard() {
       }
 
       const delta = getCountDelta(
-        report.status,
-        updatedReport.status || newStatus,
+        report,
+        { ...report, ...updatedReport, status: updatedReport.status || newStatus },
       );
       setPendingCount((state) => Math.max(0, state + delta.pending));
       setAssignedCount((state) => Math.max(0, state + delta.assigned));
       updateReportInListLocally(updatedReport);
       alert(`Solicitação avançada para o passo ${newStatus}`);
-      setObservation("");
       setDeliveryCodeByReport((state) => {
         const nextState = { ...state };
         delete nextState[report.id];
@@ -802,6 +839,9 @@ export function Dashboard() {
       const updatedReport = normalizeDeliveryResponse(response.data);
 
       if (updatedReport) {
+        const delta = getCountDelta(report, { ...report, ...updatedReport });
+        setPendingCount((state) => Math.max(0, state + delta.pending));
+        setAssignedCount((state) => Math.max(0, state + delta.assigned));
         updateReportInListLocally(updatedReport);
       } else {
         await refreshDashboard(false);
@@ -833,7 +873,7 @@ export function Dashboard() {
         status: "CANCELADO",
       });
 
-      const delta = getCountDelta(report.status, StatusDelivery.CANCELED);
+      const delta = getCountDelta(report, { ...report, status: StatusDelivery.CANCELED });
       setPendingCount((state) => Math.max(0, state + delta.pending));
       setAssignedCount((state) => Math.max(0, state + delta.assigned));
       setReports((state) => state.filter((item) => item.id !== report.id));
@@ -854,7 +894,7 @@ export function Dashboard() {
       startUpdatingDelivery(report.id);
       await api.delete(`/delivery/${report.id}`);
 
-      const delta = getCountDelta(report.status, undefined);
+      const delta = getCountDelta(report, undefined);
       setPendingCount((state) => Math.max(0, state + delta.pending));
       setAssignedCount((state) => Math.max(0, state + delta.assigned));
       setReports((state) => state.filter((item) => item.id !== report.id));
@@ -866,7 +906,7 @@ export function Dashboard() {
     }
   }
 
-  function getButtonText(currentStatus: string, id: string, report?: Report) {
+  function getButtonText(currentStatus: string, report?: Report) {
     if (StatusDelivery.PENDING === currentStatus) {
       return "Atribuir";
     }
@@ -880,10 +920,6 @@ export function Dashboard() {
     }
 
     if (StatusDelivery.COLLECTED === currentStatus) {
-      if (id !== reportSelectedToModal) {
-        return "Observação";
-      }
-
       return "Cheguei ao destino";
     }
 
@@ -891,6 +927,10 @@ export function Dashboard() {
       StatusDelivery.ARRIVED_AT_DESTINATION === currentStatus ||
       StatusDelivery.AWAITING_CODE === currentStatus
     ) {
+      if (!report?.destinationObservationConfirmed) {
+        return "Observação";
+      }
+
       const isIfoodOrder =
         Boolean(report?.isIfoodOrder) ||
         report?.observation?.includes("Pedido iFood #") ||
@@ -1040,7 +1080,9 @@ export function Dashboard() {
       <BaseModal
         isVisible={isVisible}
         handleClose={handleModal}
-        setObservation={setObservation}
+        onConfirmObservation={(text) => {
+          void handleConfirmObservation(text);
+        }}
       />
 
       <ContainerButtons>
@@ -1094,6 +1136,8 @@ export function Dashboard() {
                 getIfoodOrderNumber={getIfoodOrderNumber}
                 getClientWhatsappMessage={getClientWhatsappMessage}
                 deliveryCode={deliveryCodeByReport[report.id] || ""}
+                previewObservation={report.destinationObservation?.trim() || ""}
+                shouldShowObservationPreview={Boolean(report.destinationObservationConfirmed)}
               />
             ))}
           </>

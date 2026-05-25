@@ -11,13 +11,8 @@ export interface User {
   type: string;
   user: string;
   useIfoodIntegration?: boolean;
+  usesExternalIfoodPdv?: boolean;
   ifoodOrdersReleased?: number;
   ifoodOrdersUsed?: number;
   ifoodOrdersAvailable?: number;
-  aiqfomeEnabled?: boolean;
-  aiqfomeStoreId?: string;
-  aiqfomeWebhookSecret?: string;
-  aiqfomeAccessToken?: string;
-  aiqfomeTokenExpiresAt?: string;
-  aiqfomeIntegrationStatus?: "not_configured" | "connected" | "error";
 }
